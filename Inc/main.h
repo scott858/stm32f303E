@@ -41,6 +41,35 @@
 
 /* Exported types ------------------------------------------------------------*/
 /* Exported constants --------------------------------------------------------*/
+/* User can use this section to tailor ADCx instance used and associated
+   resources */
+
+/* Definition for ADCx clock resources */
+#define ADCx                            ADC1
+#define ADCx_CLK_ENABLE()               __HAL_RCC_ADC12_CLK_ENABLE()
+#define ADCx_CHANNEL_GPIO_CLK_ENABLE()  __HAL_RCC_GPIOC_CLK_ENABLE()
+
+#define ADCx_FORCE_RESET()              __HAL_RCC_ADC12_FORCE_RESET()
+#define ADCx_RELEASE_RESET()            __HAL_RCC_ADC12_RELEASE_RESET()
+
+/* Definition for ADCx Channel Pin */
+#define ADCx_CHANNEL_PIN                GPIO_PIN_1
+#define ADCx_CHANNEL_GPIO_PORT          GPIOC
+
+/* Definition for ADCx's Channel */
+#define ADCx_CHANNEL                    ADC_CHANNEL_7
+
+/* Definition for ADCx's NVIC */
+#define ADCx_IRQn                       ADC1_2_IRQn
+#define ADCx_IRQHandler                 ADC1_2_IRQHandler
+
+/* Definition for TIMx clock resources */
+#define TIMx                            TIM2
+#define TIMx_CLK_ENABLE()               __HAL_RCC_TIM2_CLK_ENABLE()
+
+#define TIMx_FORCE_RESET()              __HAL_RCC_TIM2_FORCE_RESET()
+#define TIMx_RELEASE_RESET()            __HAL_RCC_TIM2_RELEASE_RESET()
+
 
 #endif /* __MAIN_H */
 
