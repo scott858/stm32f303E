@@ -34,6 +34,7 @@
 /* Private macro -------------------------------------------------------------*/
 /* Private variables ---------------------------------------------------------*/
 extern ADC_HandleTypeDef AdcHandle;
+extern DAC_HandleTypeDef DacHandle;
 /* Private function prototypes -----------------------------------------------*/
 /* Private functions ---------------------------------------------------------*/
 
@@ -148,6 +149,15 @@ void EXTI9_5_IRQHandler() {
  */
 void ADCx_IRQHandler(void) {
 	HAL_ADC_IRQHandler(&AdcHandle);
+}
+
+/**
+ * @brief  This function handles DMA interrupt request.
+ * @param  None
+ * @retval None
+ */
+void DACx_DMA_IRQHandler(void) {
+	HAL_DMA_IRQHandler(DacHandle.DMA_Handle1);
 }
 
 /**

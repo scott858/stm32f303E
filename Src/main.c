@@ -37,8 +37,24 @@ FATFS SDFatFs; /* File system object for SD card logical drive */
 FIL MyFile; /* File object */
 char SDPath[4]; /* SD card logical drive path */
 
+FRESULT res; /* FatFs function common result code */
+uint32_t byteswritten, bytesread, adcTick = 0; /* File write/read counts */
+uint8_t wtext[] = "This is STM32 working with FatFs"; /* File write buffer */
+uint8_t rtext[100]; /* File read buffer */
+
+#define dataBufferSize 13
+uint8_t dataBuffer[dataBufferSize] = { 0 };
+
+uint32_t SDWriteFinished = 1;
+
 /* ADC handler declaration */
 ADC_HandleTypeDef AdcHandle;
+
+DAC_HandleTypeDef DacHandle;
+static DAC_ChannelConfTypeDef sConfig;
+const uint8_t aEscalator8bit[6] = { 0x0, 0x33, 0x66, 0x99, 0xCC, 0xFF };
+__IO uint8_t ubSelectedWavesForm = 1;
+__IO uint8_t ubKeyPressed = SET;
 
 /* TIM handler declaration */
 static TIM_HandleTypeDef htim;
@@ -52,6 +68,10 @@ static void Error_Handler(void);
 static void ADC_Config(void);
 static void TIM_Config(void);
 
+static void DAC_Ch1_TriangleConfig(void);
+static void DAC_Ch1_EscalatorConfig(void);
+static void TIM6_Config(void);
+
 /* Private functions ---------------------------------------------------------*/
 
 /**
@@ -60,11 +80,6 @@ static void TIM_Config(void);
  * @retval None
  */
 int main(void) {
-	FRESULT res; /* FatFs function common result code */
-	uint32_t byteswritten, bytesread; /* File write/read counts */
-	uint8_t wtext[] = "This is STM32 working with FatFs"; /* File write buffer */
-	uint8_t rtext[100]; /* File read buffer */
-
 	/* STM32F3xx HAL library initialization:
 	 - Configure the Flash prefetch
 	 - Systick timer is configured by default as source of time base, but user
@@ -101,6 +116,16 @@ int main(void) {
 		/* Counter Enable Error */
 		Error_Handler();
 	}
+
+	/*##-1- Configure the DAC peripheral #######################################*/
+	DacHandle.Instance = DACx;
+
+	/*##-2- Configure the TIM peripheral #######################################*/
+	TIM6_Config();
+
+	HAL_DAC_DeInit(&DacHandle);
+	DAC_Ch1_TriangleConfig();
+//	DAC_Ch1_EscalatorConfig();
 
 	/*##-1- Link the micro SD disk I/O driver ##################################*/
 	if (FATFS_LinkDriver(&SD_Driver, SDPath) == 0) {
@@ -156,7 +181,7 @@ int main(void) {
 									Error_Handler();
 								} else {
 									/* Success of the demo: no error occurrence */
-									BSP_LED_On(LED1);
+									BSP_LED_On(LED2);
 								}
 							}
 						}
@@ -166,9 +191,14 @@ int main(void) {
 		}
 	}
 
-	/*##-11- Unlink the RAM disk I/O driver ####################################*/
-	FATFS_UnLinkDriver(SDPath);
+	if (f_open(&MyFile, "DATA.TXT", FA_CREATE_ALWAYS | FA_WRITE) != FR_OK) {
+		/* 'STM32.TXT' file Open for write Error */
+		Error_Handler();
+	}
 
+	/*##-11- Unlink the RAM disk I/O driver ####################################*/
+//	FATFS_UnLinkDriver(SDPath);
+	SDWriteFinished = 0;
 	/* Infinite loop */
 	while (1) {
 	}
@@ -217,7 +247,9 @@ void SystemClock_Config(void) {
 		Error_Handler();
 	}
 }
+
 /**
+ *
  * @brief  This function is executed in case of error occurrence.
  * @param  None
  * @retval None
@@ -298,7 +330,7 @@ static void TIM_Config(void) {
 	/* Time Base configuration */
 	htim.Instance = TIMx;
 
-	htim.Init.Period = 3600;
+	htim.Init.Period = 7200;
 	htim.Init.Prescaler = 0;
 	htim.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
 	htim.Init.CounterMode = TIM_COUNTERMODE_UP;
@@ -327,10 +359,133 @@ static void TIM_Config(void) {
  * @note   This example shows a simple way to report end of conversion, and
  *         you can add your own implementation.
  * @retval None
- */
-void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *AdcHandle) {
+ */void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *AdcHandle) {
 	/* Get the converted value of regular channel */
 	uhADCxConvertedValue = HAL_ADC_GetValue(AdcHandle);
+	adcTick += 1;
+	if (!SDWriteFinished) {
+		int i;
+		for (i = 0; i < dataBufferSize; i++) {
+			dataBuffer[i] = 32;
+		}
+		sprintf(dataBuffer, "%d, %d", HAL_GetTick(), uhADCxConvertedValue);
+		for (i = 0; i < dataBufferSize; i++) {
+			if (dataBuffer[i] == 0) {
+				dataBuffer[i] = 32;
+			}
+		}
+		dataBuffer[dataBufferSize - 1] = 13;
+		res = f_write(&MyFile, dataBuffer, sizeof(dataBuffer),
+				(void *) &byteswritten);
+		if (adcTick >= 100000) {
+			SDWriteFinished = 1;
+			if (f_close(&MyFile) != FR_OK) {
+				Error_Handler();
+			} else {
+				/*##-11- Unlink the RAM disk I/O driver ####################################*/
+				FATFS_UnLinkDriver(SDPath);
+				BSP_LED_On(LED1);
+			}
+		}
+	}
+}
+
+static void DAC_Ch1_EscalatorConfig(void) {
+	/*##-1- Initialize the DAC peripheral ######################################*/
+	if (HAL_DAC_Init(&DacHandle) != HAL_OK) {
+		/* Initialization Error */
+		Error_Handler();
+	}
+
+	/*##-1- DAC channel1 Configuration #########################################*/
+	sConfig.DAC_Trigger = DAC_TRIGGER_T6_TRGO;
+	sConfig.DAC_OutputBuffer = DAC_OUTPUTBUFFER_ENABLE;
+
+	if (HAL_DAC_ConfigChannel(&DacHandle, &sConfig, DACx_CHANNEL) != HAL_OK) {
+		/* Channel configuration Error */
+		Error_Handler();
+	}
+
+	/*##-2- Enable DAC selected channel and associated DMA #############################*/
+	if (HAL_DAC_Start_DMA(&DacHandle, DACx_CHANNEL, (uint32_t *) aEscalator8bit,
+			6, DAC_ALIGN_8B_R) != HAL_OK) {
+		/* Start DMA Error */
+		Error_Handler();
+	}
+}
+
+/**
+ * @brief  DAC Channel1 Triangle Configuration
+ * @param  None
+ * @retval None
+ */
+static void DAC_Ch1_TriangleConfig(void) {
+	/*##-1- Initialize the DAC peripheral ######################################*/
+	if (HAL_DAC_Init(&DacHandle) != HAL_OK) {
+		/* DAC initialization Error */
+		Error_Handler();
+	}
+
+	/*##-2- DAC channel2 Configuration #########################################*/
+	sConfig.DAC_Trigger = DAC_TRIGGER_T6_TRGO;
+	sConfig.DAC_OutputBuffer = DAC_OUTPUTBUFFER_ENABLE;
+
+	if (HAL_DAC_ConfigChannel(&DacHandle, &sConfig, DACx_CHANNEL) != HAL_OK) {
+		/* Channel configuartion Error */
+		Error_Handler();
+	}
+
+	/*##-3- DAC channel2 Triangle Wave generation configuration ################*/
+	if (HAL_DACEx_TriangleWaveGenerate(&DacHandle, DACx_CHANNEL,
+	DAC_TRIANGLEAMPLITUDE_1023) != HAL_OK) {
+		/* Triangle wave generation Error */
+		Error_Handler();
+	}
+
+	/*##-4- Enable DAC Channel1 ################################################*/
+	if (HAL_DAC_Start(&DacHandle, DACx_CHANNEL) != HAL_OK) {
+		/* Start Error */
+		Error_Handler();
+	}
+
+	/*##-5- Set DAC channel1 DHR12RD register ################################################*/
+	if (HAL_DAC_SetValue(&DacHandle, DACx_CHANNEL, DAC_ALIGN_12B_R, 0x100)
+			!= HAL_OK) {
+		/* Setting value Error */
+		Error_Handler();
+	}
+}
+
+/**
+ * @brief  TIM6 Configuration
+ * @note   TIM6 configuration is based on APB1 frequency
+ * @note   TIM6 Update event occurs each TIM6CLK/256
+ * @param  None
+ * @retval None
+ */
+void TIM6_Config(void) {
+	static TIM_HandleTypeDef htim;
+	TIM_MasterConfigTypeDef sMasterConfig;
+
+	/*##-1- Configure the TIM peripheral #######################################*/
+	/* Time base configuration */
+	htim.Instance = TIM6;
+
+	htim.Init.Period = 0x7FF;
+	htim.Init.Prescaler = 0;
+	htim.Init.ClockDivision = 0;
+	htim.Init.CounterMode = TIM_COUNTERMODE_UP;
+	htim.Init.RepetitionCounter = 0;
+	HAL_TIM_Base_Init(&htim);
+
+	/* TIM6 TRGO selection */
+	sMasterConfig.MasterOutputTrigger = TIM_TRGO_UPDATE;
+	sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+
+	HAL_TIMEx_MasterConfigSynchronization(&htim, &sMasterConfig);
+
+	/*##-2- Enable TIM peripheral counter ######################################*/
+	HAL_TIM_Base_Start(&htim);
 }
 
 #ifdef USE_FULL_ASSERT
