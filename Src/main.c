@@ -42,13 +42,19 @@ uint32_t byteswritten, bytesread, adcTick = 0; /* File write/read counts */
 uint8_t wtext[] = "This is STM32 working with FatFs"; /* File write buffer */
 uint8_t rtext[100]; /* File read buffer */
 
-#define dataBufferSize 13
+#define dataBufferSize 18
 uint8_t dataBuffer[dataBufferSize] = { 0 };
 
 uint32_t SDWriteFinished = 1;
 
 /* ADC handler declaration */
-ADC_HandleTypeDef AdcHandle;
+ADC_HandleTypeDef AdcHandle_master;
+ADC_HandleTypeDef AdcHandle_slave;
+
+/* Variable containing ADC conversions results */
+__IO uint16_t aADCDualConvertedValue[256];
+__IO uint8_t aADCDualConversionDone = 0;
+__IO uint8_t aADCDualConversionValue = 0;
 
 DAC_HandleTypeDef DacHandle;
 static DAC_ChannelConfTypeDef sConfig;
@@ -56,17 +62,10 @@ const uint8_t aEscalator8bit[6] = { 0x0, 0x33, 0x66, 0x99, 0xCC, 0xFF };
 __IO uint8_t ubSelectedWavesForm = 1;
 __IO uint8_t ubKeyPressed = SET;
 
-/* TIM handler declaration */
-static TIM_HandleTypeDef htim;
-
-/* Variable used to get converted value */
-__IO uint16_t uhADCxConvertedValue = 0;
-
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void Error_Handler(void);
 static void ADC_Config(void);
-static void TIM_Config(void);
 
 static void DAC_Ch1_TriangleConfig(void);
 static void DAC_Ch1_EscalatorConfig(void);
@@ -99,21 +98,36 @@ int main(void) {
 	/* Configure the system clock to 72 MHz */
 	SystemClock_Config();
 
-	/*##-1- TIM Peripheral Configuration ######################################*/
-	TIM_Config();
-
 	/*##-2- Configure the ADC peripheral ######################################*/
 	ADC_Config();
 
-	/*##-4- Start the conversion process and enable interrupt ##################*/
-	if (HAL_ADC_Start_IT(&AdcHandle) != HAL_OK) {
-		/* Start Conversation Error */
+	/* Run the ADC calibration in single-ended mode */
+	if (HAL_ADCEx_Calibration_Start(&AdcHandle_master, ADC_SINGLE_ENDED)
+			!= HAL_OK) {
+		/* Calibration Error */
 		Error_Handler();
 	}
 
-	/*##-3- TIM counter enable ################################################*/
-	if (HAL_TIM_Base_Start(&htim) != HAL_OK) {
-		/* Counter Enable Error */
+	if (HAL_ADCEx_Calibration_Start(&AdcHandle_slave, ADC_SINGLE_ENDED)
+			!= HAL_OK) {
+		/* Calibration Error */
+		Error_Handler();
+	}
+
+	/*## Enable peripherals ####################################################*/
+
+	/* Enable ADC slave */
+	if (HAL_ADC_Start(&AdcHandle_slave) != HAL_OK) {
+		/* Start Error */
+		Error_Handler();
+	}
+
+	/*## Start ADC conversions #################################################*/
+
+	/* Start ADCx and ADCy multimode conversion with interruption */
+	if (HAL_ADCEx_MultiModeStart_DMA(&AdcHandle_master,
+			(uint32_t *) aADCDualConvertedValue, 256) != HAL_OK) {
+		/* Start Error */
 		Error_Handler();
 	}
 
@@ -201,6 +215,18 @@ int main(void) {
 	SDWriteFinished = 0;
 	/* Infinite loop */
 	while (1) {
+		if (aADCDualConversionDone == 1) {
+			/* Toggle LED1: Conversions results are available                           */
+			/* The toggle frequency depends on Conversion Value link to RV2 position    */
+			/* In the case of this example:                                             */
+			/* HAL_ADC_ConvCpltCallback() is called when DMA Transfer process is        */
+			/* completed.                                                               */
+			/* Since ADC and DMA are configured in continuous and circular mode, this   */
+			/* function will be called each time the DMA buffer length is reached.      */
+			BSP_LED_Toggle(LED1);
+			HAL_Delay(aADCDualConversionValue * 10);
+			aADCDualConversionDone = 0;
+		}
 	}
 }
 
@@ -276,79 +302,84 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 
 /**
  * @brief  ADC configuration
+ * @note   This function configures the ADC peripheral
+ 1) Configuration of ADCx peripheral (ADC master)
+ 2) Configuration of ADCy peripheral (ADC slave)
+ 3) Configuration of channel on ADCx regular group on rank 1
+ 4) Configuration of channel on ADCy regular group on rank 1
+ 5) Configuration of multimode
  * @param  None
  * @retval None
  */
 static void ADC_Config(void) {
 	ADC_ChannelConfTypeDef sConfig;
+	ADC_MultiModeTypeDef mode;
 
-	/* ADC Initialization */
-	AdcHandle.Instance = ADCx;
+	/*##-1- Configuration of ADCx peripheral (ADC master) ######################*/
+	/* Configuration of ADCx init structure: ADC parameters and regular group */
+	AdcHandle_master.Instance = ADCx;
 
-	AdcHandle.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV4;
-	AdcHandle.Init.Resolution = ADC_RESOLUTION_12B;
-	AdcHandle.Init.DataAlign = ADC_DATAALIGN_RIGHT;
-	AdcHandle.Init.ScanConvMode = DISABLE; /* Sequencer disabled (ADC conversion on only 1 channel: channel set on rank 1) */
-	AdcHandle.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
-	AdcHandle.Init.LowPowerAutoWait = DISABLE;
-	AdcHandle.Init.ContinuousConvMode = DISABLE; /* Continuous mode disabled to have only 1 conversion at each conversion trig */
-	AdcHandle.Init.NbrOfConversion = 1; /* Parameter discarded because sequencer is disabled */
-	AdcHandle.Init.DiscontinuousConvMode = DISABLE; /* Parameter discarded because sequencer is disabled */
-	AdcHandle.Init.NbrOfDiscConversion = 1; /* Parameter discarded because sequencer is disabled */
-	AdcHandle.Init.ExternalTrigConv = ADC_EXTERNALTRIGCONV_T2_TRGO; /* Conversion start trigged at each external event */
-	AdcHandle.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_RISING;
-	AdcHandle.Init.DMAContinuousRequests = ENABLE;
-	AdcHandle.Init.Overrun = ADC_OVR_DATA_OVERWRITTEN;
+	AdcHandle_master.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV1; /* ADC clock to AHB without prescaler to have maximum frequency 72MHz */
+	AdcHandle_master.Init.Resolution = ADC_RESOLUTION_6B; /* ADC resolution 6 bits to have conversion time = 6.5 ADC clock cycles */
+	AdcHandle_master.Init.DataAlign = ADC_DATAALIGN_RIGHT;
+	AdcHandle_master.Init.ScanConvMode = DISABLE; /* Sequencer disabled (ADC conversion on only 1 channel: channel set on rank 1) */
+	AdcHandle_master.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
+	AdcHandle_master.Init.LowPowerAutoWait = DISABLE;
+	AdcHandle_master.Init.ContinuousConvMode = ENABLE; /* Continuous mode to have maximum conversion speed (no delay between conversions) */
+	AdcHandle_master.Init.NbrOfConversion = 1; /* Parameter discarded because sequencer is disabled */
+	AdcHandle_master.Init.DiscontinuousConvMode = DISABLE; /* Parameter discarded because sequencer is disabled */
+	AdcHandle_master.Init.NbrOfDiscConversion = 1; /* Parameter discarded because sequencer is disabled */
+	AdcHandle_master.Init.ExternalTrigConv = ADC_SOFTWARE_START; /* Software start to trig the 1st conversion manually, without external event */
+	AdcHandle_master.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
+	AdcHandle_master.Init.DMAContinuousRequests = ENABLE; /* ADC-DMA continuous requests to match with DMA in circular mode */
+	AdcHandle_master.Init.Overrun = ADC_OVR_DATA_OVERWRITTEN;
 
-	if (HAL_ADC_Init(&AdcHandle) != HAL_OK) {
-		/* ADC initialization Error */
+	if (HAL_ADC_Init(&AdcHandle_master) != HAL_OK) {
+		/* Initialization Error */
 		Error_Handler();
 	}
 
-	/* Configure ADC regular channel */
-	sConfig.Channel = ADCx_CHANNEL;
+	/*##-2- Configuration of ADCy peripheral (ADC slave) #######################*/
+	AdcHandle_slave.Instance = ADCy;
+
+	/* Configuration of ADCy init structure: ADC parameters and regular group */
+	/* Same configuration as ADCx */
+	AdcHandle_slave.Init = AdcHandle_master.Init;
+
+	if (HAL_ADC_Init(&AdcHandle_slave) != HAL_OK) {
+		/* Initialization Error */
+		Error_Handler();
+	}
+
+	/*##-3- Configuration of channel on ADCx regular group on rank 1 ###########*/
+	sConfig.Channel = ADCx_CHANNELa;
 	sConfig.Rank = ADC_REGULAR_RANK_1;
-	sConfig.SamplingTime = ADC_SAMPLETIME_19CYCLES_5;
-	sConfig.SingleDiff = ADC_SINGLE_ENDED;
-	sConfig.OffsetNumber = ADC_OFFSET_NONE;
+	sConfig.SamplingTime = ADC_SAMPLETIME_1CYCLE_5;
 	sConfig.Offset = 0;
 
-	if (HAL_ADC_ConfigChannel(&AdcHandle, &sConfig) != HAL_OK) {
+	if (HAL_ADC_ConfigChannel(&AdcHandle_master, &sConfig) != HAL_OK) {
 		/* Channel Configuration Error */
 		Error_Handler();
 	}
-}
 
-/**
- * @brief  TIM configuration
- * @param  None
- * @retval None
- */
-static void TIM_Config(void) {
-	TIM_MasterConfigTypeDef sMasterConfig;
+	/*##-4- Configuration of channel on ADCy regular group on rank 1 ###########*/
+	/* Same channel as ADCx for dual mode interleaved: both ADC are converting  */
+	/* the same channel.                                                        */
+	sConfig.Channel = ADCx_CHANNELa;
 
-	/* Time Base configuration */
-	htim.Instance = TIMx;
-
-	htim.Init.Period = 7200;
-	htim.Init.Prescaler = 0;
-	htim.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-	htim.Init.CounterMode = TIM_COUNTERMODE_UP;
-	htim.Init.RepetitionCounter = 0x0;
-
-	if (HAL_TIM_Base_Init(&htim) != HAL_OK) {
-		/* Timer initialization Error */
+	if (HAL_ADC_ConfigChannel(&AdcHandle_slave, &sConfig) != HAL_OK) {
+		/* Channel Configuration Error */
 		Error_Handler();
 	}
 
-	/* Timer TRGO selection */
-	sMasterConfig.MasterOutputTrigger = TIM_TRGO_UPDATE;
-	sMasterConfig.MasterOutputTrigger2 = TIM_TRGO2_RESET;
-	sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
-
-	if (HAL_TIMEx_MasterConfigSynchronization(&htim, &sMasterConfig)
-			!= HAL_OK) {
-		/* Timer TRGO selection Error */
+	/*##-5- Configuration of multimode #########################################*/
+	/* Multimode parameters settings and set ADCy (slave) under control of      */
+	/* ADCx (master).                                                           */
+	mode.Mode = ADC_DUALMODE_INTERL;
+	mode.DMAAccessMode = ADC_DMAACCESSMODE_8_6_BITS;
+	mode.TwoSamplingDelay = ADC_TWOSAMPLINGDELAY_3CYCLES;
+	if (HAL_ADCEx_MultiModeConfigChannel(&AdcHandle_master, &mode) != HAL_OK) {
+		/* Channel Configuration Error */
 		Error_Handler();
 	}
 }
@@ -359,16 +390,18 @@ static void TIM_Config(void) {
  * @note   This example shows a simple way to report end of conversion, and
  *         you can add your own implementation.
  * @retval None
- */void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *AdcHandle) {
+ */void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc) {
 	/* Get the converted value of regular channel */
-	uhADCxConvertedValue = HAL_ADC_GetValue(AdcHandle);
+	aADCDualConversionDone = 1;
+	aADCDualConversionValue = HAL_ADC_GetValue(hadc);
+
 	adcTick += 1;
 	if (!SDWriteFinished) {
 		int i;
 		for (i = 0; i < dataBufferSize; i++) {
 			dataBuffer[i] = 32;
 		}
-		sprintf(dataBuffer, "%d, %d", HAL_GetTick(), uhADCxConvertedValue);
+		sprintf(dataBuffer, "%u, %u", HAL_GetTick(), aADCDualConversionValue);
 		for (i = 0; i < dataBufferSize; i++) {
 			if (dataBuffer[i] == 0) {
 				dataBuffer[i] = 32;

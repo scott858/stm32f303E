@@ -44,34 +44,44 @@
 /* User can use this section to tailor ADCx instance used and associated
  resources */
 
-/* Definition for ADCx clock resources */
+/* User can use this section to tailor DACx instance used and associated
+ resources */
+
+/* ## Definition of ADC related resources ################################### */
+/* Definition of ADCx clock resources */
 #define ADCx                            ADC1
 #define ADCx_CLK_ENABLE()               __HAL_RCC_ADC12_CLK_ENABLE()
-#define ADCx_CHANNEL_GPIO_CLK_ENABLE()  __HAL_RCC_GPIOC_CLK_ENABLE()
 
 #define ADCx_FORCE_RESET()              __HAL_RCC_ADC12_FORCE_RESET()
 #define ADCx_RELEASE_RESET()            __HAL_RCC_ADC12_RELEASE_RESET()
 
-/* Definition for ADCx Channel Pin */
-#define ADCx_CHANNEL_PIN                GPIO_PIN_2
-#define ADCx_CHANNEL_GPIO_PORT          GPIOC
+/* Definition of ADCx channels */
+#define ADCx_CHANNELa                   ADC_CHANNEL_8
 
-/* Definition for ADCx's Channel */
-#define ADCx_CHANNEL                    ADC_CHANNEL_8
+/* Definition of ADCx channels pins */
+#define ADCx_CHANNELa_GPIO_CLK_ENABLE()  __HAL_RCC_GPIOC_CLK_ENABLE()
+#define ADCx_CHANNELa_GPIO_PORT         GPIOC
+#define ADCx_CHANNELa_PIN               GPIO_PIN_2
 
-/* Definition for ADCx's NVIC */
-#define ADCx_IRQn                       ADC1_2_IRQn
-#define ADCx_IRQHandler                 ADC1_2_IRQHandler
+/* Definition of ADCx DMA resources */
+#define ADCx_DMA_CLK_ENABLE()            __HAL_RCC_DMA1_CLK_ENABLE()
+#define ADCx_DMA_STREAM                  DMA1_Channel1
 
-/* Definition for TIMx clock resources */
-#define TIMx                            TIM2
-#define TIMx_CLK_ENABLE()               __HAL_RCC_TIM2_CLK_ENABLE()
+#define ADCx_DMA_IRQn                    DMA1_Channel1_IRQn
+#define ADCx_DMA_IRQHandler              DMA1_Channel1_IRQHandler
 
-#define TIMx_FORCE_RESET()              __HAL_RCC_TIM2_FORCE_RESET()
-#define TIMx_RELEASE_RESET()            __HAL_RCC_TIM2_RELEASE_RESET()
+/* Definition of ADCx NVIC resources */
+#define ADCx_IRQn                        ADC1_2_IRQn
+#define ADCx_IRQHandler                  ADC1_2_IRQHandler
 
-/* User can use this section to tailor DACx instance used and associated
- resources */
+/* Definition of ADCy clock resources */
+#define ADCy                             ADC2
+#define ADCy_CLK_ENABLE()                __HAL_RCC_ADC12_CLK_ENABLE()
+#define ADCy_CHANNEL_GPIO_CLK_ENABLE()   __HAL_RCC_GPIOC_CLK_ENABLE()
+
+#define ADCy_FORCE_RESET()               __HAL_RCC_ADC12_FORCE_RESET()
+#define ADCy_RELEASE_RESET()             __HAL_RCC_ADC12_RELEASE_RESET()
+
 /* Definition for DACx clock resources */
 #define DACx                            DAC1
 #define DACx_CHANNEL_GPIO_CLK_ENABLE()  __HAL_RCC_GPIOA_CLK_ENABLE()
