@@ -52,7 +52,8 @@ ADC_HandleTypeDef AdcHandle_master;
 ADC_HandleTypeDef AdcHandle_slave;
 
 /* Variable containing ADC conversions results */
-__IO uint16_t aADCDualConvertedValue[256];
+#define convertedValueBufferSize 256
+__IO uint32_t aADCDualConvertedValue[convertedValueBufferSize];
 __IO uint8_t aADCDualConversionDone = 0;
 __IO uint8_t aADCDualConversionValue = 0;
 
@@ -126,7 +127,7 @@ int main(void) {
 
 	/* Start ADCx and ADCy multimode conversion with interruption */
 	if (HAL_ADCEx_MultiModeStart_DMA(&AdcHandle_master,
-			(uint32_t *) aADCDualConvertedValue, 256) != HAL_OK) {
+			(uint32_t *) aADCDualConvertedValue, convertedValueBufferSize) != HAL_OK) {
 		/* Start Error */
 		Error_Handler();
 	}
@@ -223,7 +224,7 @@ int main(void) {
 			/* completed.                                                               */
 			/* Since ADC and DMA are configured in continuous and circular mode, this   */
 			/* function will be called each time the DMA buffer length is reached.      */
-			BSP_LED_Toggle(LED1);
+			BSP_LED_Toggle(LED2);
 			HAL_Delay(aADCDualConversionValue * 10);
 			aADCDualConversionDone = 0;
 		}
@@ -320,7 +321,7 @@ static void ADC_Config(void) {
 	AdcHandle_master.Instance = ADCx;
 
 	AdcHandle_master.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV1; /* ADC clock to AHB without prescaler to have maximum frequency 72MHz */
-	AdcHandle_master.Init.Resolution = ADC_RESOLUTION_6B; /* ADC resolution 6 bits to have conversion time = 6.5 ADC clock cycles */
+	AdcHandle_master.Init.Resolution = ADC_RESOLUTION_12B; /* ADC resolution 6 bits to have conversion time = 6.5 ADC clock cycles */
 	AdcHandle_master.Init.DataAlign = ADC_DATAALIGN_RIGHT;
 	AdcHandle_master.Init.ScanConvMode = DISABLE; /* Sequencer disabled (ADC conversion on only 1 channel: channel set on rank 1) */
 	AdcHandle_master.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
@@ -354,7 +355,7 @@ static void ADC_Config(void) {
 	/*##-3- Configuration of channel on ADCx regular group on rank 1 ###########*/
 	sConfig.Channel = ADCx_CHANNELa;
 	sConfig.Rank = ADC_REGULAR_RANK_1;
-	sConfig.SamplingTime = ADC_SAMPLETIME_1CYCLE_5;
+	sConfig.SamplingTime = ADC_SAMPLETIME_181CYCLES_5;
 	sConfig.Offset = 0;
 
 	if (HAL_ADC_ConfigChannel(&AdcHandle_master, &sConfig) != HAL_OK) {
@@ -365,7 +366,7 @@ static void ADC_Config(void) {
 	/*##-4- Configuration of channel on ADCy regular group on rank 1 ###########*/
 	/* Same channel as ADCx for dual mode interleaved: both ADC are converting  */
 	/* the same channel.                                                        */
-	sConfig.Channel = ADCx_CHANNELa;
+	sConfig.Channel = ADCy_CHANNELa;
 
 	if (HAL_ADC_ConfigChannel(&AdcHandle_slave, &sConfig) != HAL_OK) {
 		/* Channel Configuration Error */
@@ -375,9 +376,9 @@ static void ADC_Config(void) {
 	/*##-5- Configuration of multimode #########################################*/
 	/* Multimode parameters settings and set ADCy (slave) under control of      */
 	/* ADCx (master).                                                           */
-	mode.Mode = ADC_DUALMODE_INTERL;
-	mode.DMAAccessMode = ADC_DMAACCESSMODE_8_6_BITS;
-	mode.TwoSamplingDelay = ADC_TWOSAMPLINGDELAY_3CYCLES;
+	mode.Mode = ADC_DUALMODE_REGSIMULT;
+	mode.DMAAccessMode = ADC_DMAACCESSMODE_12_10_BITS;
+	mode.TwoSamplingDelay = ADC_TWOSAMPLINGDELAY_12CYCLES;
 	if (HAL_ADCEx_MultiModeConfigChannel(&AdcHandle_master, &mode) != HAL_OK) {
 		/* Channel Configuration Error */
 		Error_Handler();
@@ -390,11 +391,53 @@ static void ADC_Config(void) {
  * @note   This example shows a simple way to report end of conversion, and
  *         you can add your own implementation.
  * @retval None
- */void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc) {
+ */
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc) {
+	/* Get the converted value of regular channel */
+	uint32_t masterConvertedValue = 0;
+	uint32_t slaveConvertedValue = 0;
+	uint32_t compoundConvertedValue = 0;
+	aADCDualConversionDone = 1;
+	adcTick += 1;
+	if (!SDWriteFinished) {
+
+		int i, j;
+		for (j = 0; j < convertedValueBufferSize; j++) {
+			compoundConvertedValue = aADCDualConvertedValue[j];
+			masterConvertedValue += compoundConvertedValue & 0xFFFF;
+			slaveConvertedValue += compoundConvertedValue >> 16;
+		}
+		masterConvertedValue = masterConvertedValue / convertedValueBufferSize;
+		slaveConvertedValue = slaveConvertedValue / convertedValueBufferSize;
+		for (i = 0; i < dataBufferSize; i++) {
+			dataBuffer[i] = 32;
+		}
+		sprintf(dataBuffer, "%u, %u, %u", HAL_GetTick(), slaveConvertedValue,
+				masterConvertedValue);
+		for (i = 0; i < dataBufferSize; i++) {
+			if (dataBuffer[i] == 0) {
+				dataBuffer[i] = 32;
+			}
+		}
+		dataBuffer[dataBufferSize - 1] = 13;
+		res = f_write(&MyFile, dataBuffer, sizeof(dataBuffer),
+				(void *) &byteswritten);
+		if (adcTick >= 5000) {
+			SDWriteFinished = 1;
+			if (f_close(&MyFile) != FR_OK) {
+				Error_Handler();
+			} else {
+				/*##-11- Unlink the RAM disk I/O driver ####################################*/
+				FATFS_UnLinkDriver(SDPath);
+				BSP_LED_On(LED1);
+			}
+		}
+	}
+}
+
+void ConvCpltCallbackCSV(ADC_HandleTypeDef *hadc) {
 	/* Get the converted value of regular channel */
 	aADCDualConversionDone = 1;
-	aADCDualConversionValue = HAL_ADC_GetValue(hadc);
-
 	adcTick += 1;
 	if (!SDWriteFinished) {
 		int i;
@@ -411,6 +454,26 @@ static void ADC_Config(void) {
 		res = f_write(&MyFile, dataBuffer, sizeof(dataBuffer),
 				(void *) &byteswritten);
 		if (adcTick >= 100000) {
+			SDWriteFinished = 1;
+			if (f_close(&MyFile) != FR_OK) {
+				Error_Handler();
+			} else {
+				/*##-11- Unlink the RAM disk I/O driver ####################################*/
+				FATFS_UnLinkDriver(SDPath);
+				BSP_LED_On(LED1);
+			}
+		}
+	}
+}
+
+void ConvCpltCallbackBinary(ADC_HandleTypeDef *hadc) {
+	/* Get the converted value of regular channel */
+	aADCDualConversionDone = 1;
+	adcTick += 1;
+	if (!SDWriteFinished) {
+		res = f_write(&MyFile, aADCDualConvertedValue,
+				sizeof(aADCDualConvertedValue), (void *) &byteswritten);
+		if (adcTick >= 10000) {
 			SDWriteFinished = 1;
 			if (f_close(&MyFile) != FR_OK) {
 				Error_Handler();

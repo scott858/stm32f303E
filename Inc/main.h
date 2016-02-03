@@ -51,6 +51,7 @@
 /* Definition of ADCx clock resources */
 #define ADCx                            ADC1
 #define ADCx_CLK_ENABLE()               __HAL_RCC_ADC12_CLK_ENABLE()
+#define ADCx_CHANNELa_GPIO_CLK_ENABLE()  __HAL_RCC_GPIOC_CLK_ENABLE()
 
 #define ADCx_FORCE_RESET()              __HAL_RCC_ADC12_FORCE_RESET()
 #define ADCx_RELEASE_RESET()            __HAL_RCC_ADC12_RELEASE_RESET()
@@ -59,7 +60,6 @@
 #define ADCx_CHANNELa                   ADC_CHANNEL_8
 
 /* Definition of ADCx channels pins */
-#define ADCx_CHANNELa_GPIO_CLK_ENABLE()  __HAL_RCC_GPIOC_CLK_ENABLE()
 #define ADCx_CHANNELa_GPIO_PORT         GPIOC
 #define ADCx_CHANNELa_PIN               GPIO_PIN_2
 
@@ -81,6 +81,13 @@
 
 #define ADCy_FORCE_RESET()               __HAL_RCC_ADC12_FORCE_RESET()
 #define ADCy_RELEASE_RESET()             __HAL_RCC_ADC12_RELEASE_RESET()
+
+/* Definition of ADCy channels */
+#define ADCy_CHANNELa                   ADC_CHANNEL_9
+
+/* Definition of ADCy channels pins */
+#define ADCy_CHANNELa_GPIO_PORT         GPIOC
+#define ADCy_CHANNELa_PIN               GPIO_PIN_3
 
 /* Definition for DACx clock resources */
 #define DACx                            DAC1

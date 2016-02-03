@@ -83,8 +83,7 @@ void HAL_ADC_MspInit(ADC_HandleTypeDef *hadc) {
 	/* Enable clock of GPIO associated to the peripheral channels */
 	ADCx_CHANNELa_GPIO_CLK_ENABLE();
 	/* Enable clock of ADCx peripheral */
-	ADCx_CLK_ENABLE()
-	;
+	ADCx_CLK_ENABLE();
 	/* Enable clock of DMA associated to the peripheral */
 	ADCx_DMA_CLK_ENABLE();
 
@@ -99,6 +98,12 @@ void HAL_ADC_MspInit(ADC_HandleTypeDef *hadc) {
 	GPIO_InitStruct.Pull = GPIO_NOPULL;
 	HAL_GPIO_Init(ADCx_CHANNELa_GPIO_PORT, &GPIO_InitStruct);
 
+	/* ADCy Channel GPIO pin configuration */
+	GPIO_InitStruct.Pin = ADCy_CHANNELa_PIN;
+	GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
+	GPIO_InitStruct.Pull = GPIO_NOPULL;
+	HAL_GPIO_Init(ADCy_CHANNELa_GPIO_PORT, &GPIO_InitStruct);
+
 	/*##-3- Configure the DMA ##################################################*/
 	/* Configure DMA parameters */
 	DmaHandle.Instance = ADCx_DMA_STREAM; /* DMA stream of ADC master */
@@ -106,8 +111,8 @@ void HAL_ADC_MspInit(ADC_HandleTypeDef *hadc) {
 	DmaHandle.Init.Direction = DMA_PERIPH_TO_MEMORY;
 	DmaHandle.Init.PeriphInc = DMA_PINC_DISABLE;
 	DmaHandle.Init.MemInc = DMA_MINC_ENABLE;
-	DmaHandle.Init.PeriphDataAlignment = DMA_PDATAALIGN_HALFWORD; /* Transfer from ADC by half-word to match with ADC resolution 6 or 8 bits */
-	DmaHandle.Init.MemDataAlignment = DMA_MDATAALIGN_HALFWORD; /* Transfer to memory by half-word to match with buffer variable type: half-word */
+	DmaHandle.Init.PeriphDataAlignment = DMA_PDATAALIGN_WORD; /* Transfer from ADC by half-word to match with ADC resolution 6 or 8 bits */
+	DmaHandle.Init.MemDataAlignment = DMA_MDATAALIGN_WORD; /* Transfer to memory by half-word to match with buffer variable type: half-word */
 	DmaHandle.Init.Mode = DMA_CIRCULAR; /* DMA in circular mode to match with ADC-DMA continuous requests */
 	DmaHandle.Init.Priority = DMA_PRIORITY_HIGH;
 
@@ -143,6 +148,7 @@ void HAL_ADC_MspDeInit(ADC_HandleTypeDef *hadc) {
 	/*##-2- Disable peripherals and GPIO Clocks ################################*/
 	/* De-initialize the ADC Channel GPIO pin */
 	HAL_GPIO_DeInit(ADCx_CHANNELa_GPIO_PORT, ADCx_CHANNELa_PIN);
+	HAL_GPIO_DeInit(ADCy_CHANNELa_GPIO_PORT, ADCy_CHANNELa_PIN);
 
 	/*##-3- Disable the DMA Streams ############################################*/
 	/* De-Initialize the DMA Stream associate to transmission process */
