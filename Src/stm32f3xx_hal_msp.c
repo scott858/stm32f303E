@@ -125,7 +125,7 @@ void HAL_ADC_MspInit(ADC_HandleTypeDef *hadc) {
 
 	/*##-4- Configure the NVIC #################################################*/
 	/* NVIC configuration for DMA transfer complete interrupt */
-	HAL_NVIC_SetPriority(ADCx_DMA_IRQn, 1, 0);
+	HAL_NVIC_SetPriority(ADCx_DMA_IRQn, 6, 0);
 	HAL_NVIC_EnableIRQ(ADCx_DMA_IRQn);
 }
 
@@ -381,8 +381,8 @@ void HAL_DAC_MspInit(DAC_HandleTypeDef *hdac) {
 	hdma_dac1.Init.Direction = DMA_MEMORY_TO_PERIPH;
 	hdma_dac1.Init.PeriphInc = DMA_PINC_DISABLE;
 	hdma_dac1.Init.MemInc = DMA_MINC_ENABLE;
-	hdma_dac1.Init.PeriphDataAlignment = DMA_PDATAALIGN_BYTE;
-	hdma_dac1.Init.MemDataAlignment = DMA_MDATAALIGN_BYTE;
+	hdma_dac1.Init.PeriphDataAlignment = DMA_PDATAALIGN_HALFWORD;
+	hdma_dac1.Init.MemDataAlignment = DMA_MDATAALIGN_HALFWORD;
 	hdma_dac1.Init.Mode = DMA_CIRCULAR;
 	hdma_dac1.Init.Priority = DMA_PRIORITY_HIGH;
 
@@ -393,7 +393,7 @@ void HAL_DAC_MspInit(DAC_HandleTypeDef *hdac) {
 
 	/*##-4- Configure the NVIC for DMA #########################################*/
 	/* Enable the DMA1_Channel3 IRQ Channel */
-	HAL_NVIC_SetPriority(DACx_DMA_IRQn, 2, 0);
+	HAL_NVIC_SetPriority(DACx_DMA_IRQn, 6, 0);
 	HAL_NVIC_EnableIRQ(DACx_DMA_IRQn);
 
 	/*##-5- Configure the SYSCFG for DMA  remapping#############################*/

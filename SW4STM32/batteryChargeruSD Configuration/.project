@@ -36,6 +36,21 @@
 			<locationURI>PARENT-2-PROJECT_LOC/Drivers/CMSIS/Device/ST/STM32F3xx/Source/Templates/gcc/startup_stm32f303xe.s</locationURI>
 		</link>
 		<link>
+			<name>Application/User/arm_common_tables.c</name>
+			<type>1</type>
+			<location>C:/Users/scott/STM32Cube/Repository/STM32Cube_FW_F3_V1.4.0/Drivers/CMSIS/DSP_Lib/Source/CommonTables/arm_common_tables.c</location>
+		</link>
+		<link>
+			<name>Application/User/arm_cos_f32.c</name>
+			<type>1</type>
+			<location>C:/Users/scott/STM32Cube/Repository/STM32Cube_FW_F3_V1.4.0/Drivers/CMSIS/DSP_Lib/Source/FastMathFunctions/arm_cos_f32.c</location>
+		</link>
+		<link>
+			<name>Application/User/arm_sin_f32.c</name>
+			<type>1</type>
+			<location>C:/Users/scott/STM32Cube/Repository/STM32Cube_FW_F3_V1.4.0/Drivers/CMSIS/DSP_Lib/Source/FastMathFunctions/arm_sin_f32.c</location>
+		</link>
+		<link>
 			<name>Application/User/main.c</name>
 			<type>1</type>
 			<locationURI>PARENT-2-PROJECT_LOC/Src/main.c</locationURI>

@@ -28,6 +28,8 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "arm_math.h"
+#include "arm_common_tables.h"
 
 /* Private typedef -----------------------------------------------------------*/
 /* Private define ------------------------------------------------------------*/
@@ -52,8 +54,13 @@ ADC_HandleTypeDef AdcHandle_master;
 ADC_HandleTypeDef AdcHandle_slave;
 
 /* Variable containing ADC conversions results */
-#define convertedValueBufferSize 256
+#define convertedValueBufferSize 1024
+#define sinBufferSize 1024
+__IO uint16_t uhDACxConvertedValue = 0;
+__IO uint16_t sinBuffer[sinBufferSize] = {0};
 __IO uint32_t aADCDualConvertedValue[convertedValueBufferSize];
+__IO uint16_t parsedDataBuffer[convertedValueBufferSize];
+__IO uint16_t parsedDataHalfBuffer[convertedValueBufferSize / 2];
 __IO uint8_t aADCDualConversionDone = 0;
 __IO uint8_t aADCDualConversionValue = 0;
 
@@ -67,10 +74,15 @@ __IO uint8_t ubKeyPressed = SET;
 void SystemClock_Config(void);
 static void Error_Handler(void);
 static void ADC_Config(void);
+void writeData(int start, int end);
+void writeAsciiData(int start, int end);
 
 static void DAC_Ch1_TriangleConfig(void);
 static void DAC_Ch1_EscalatorConfig(void);
 static void TIM6_Config(void);
+
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* AdcHandle);
+static void DAC_Ch1_SinConfig(void);
 
 /* Private functions ---------------------------------------------------------*/
 
@@ -127,7 +139,8 @@ int main(void) {
 
 	/* Start ADCx and ADCy multimode conversion with interruption */
 	if (HAL_ADCEx_MultiModeStart_DMA(&AdcHandle_master,
-			(uint32_t *) aADCDualConvertedValue, convertedValueBufferSize) != HAL_OK) {
+			(uint32_t *) aADCDualConvertedValue, convertedValueBufferSize)
+			!= HAL_OK) {
 		/* Start Error */
 		Error_Handler();
 	}
@@ -139,7 +152,8 @@ int main(void) {
 	TIM6_Config();
 
 	HAL_DAC_DeInit(&DacHandle);
-	DAC_Ch1_TriangleConfig();
+	DAC_Ch1_SinConfig();
+//	DAC_Ch1_TriangleConfig();
 //	DAC_Ch1_EscalatorConfig();
 
 	/*##-1- Link the micro SD disk I/O driver ##################################*/
@@ -216,18 +230,6 @@ int main(void) {
 	SDWriteFinished = 0;
 	/* Infinite loop */
 	while (1) {
-		if (aADCDualConversionDone == 1) {
-			/* Toggle LED1: Conversions results are available                           */
-			/* The toggle frequency depends on Conversion Value link to RV2 position    */
-			/* In the case of this example:                                             */
-			/* HAL_ADC_ConvCpltCallback() is called when DMA Transfer process is        */
-			/* completed.                                                               */
-			/* Since ADC and DMA are configured in continuous and circular mode, this   */
-			/* function will be called each time the DMA buffer length is reached.      */
-			BSP_LED_Toggle(LED2);
-			HAL_Delay(aADCDualConversionValue * 10);
-			aADCDualConversionDone = 0;
-		}
 	}
 }
 
@@ -355,7 +357,7 @@ static void ADC_Config(void) {
 	/*##-3- Configuration of channel on ADCx regular group on rank 1 ###########*/
 	sConfig.Channel = ADCx_CHANNELa;
 	sConfig.Rank = ADC_REGULAR_RANK_1;
-	sConfig.SamplingTime = ADC_SAMPLETIME_181CYCLES_5;
+	sConfig.SamplingTime = ADC_SAMPLETIME_4CYCLES_5;
 	sConfig.Offset = 0;
 
 	if (HAL_ADC_ConfigChannel(&AdcHandle_master, &sConfig) != HAL_OK) {
@@ -378,41 +380,34 @@ static void ADC_Config(void) {
 	/* ADCx (master).                                                           */
 	mode.Mode = ADC_DUALMODE_REGSIMULT;
 	mode.DMAAccessMode = ADC_DMAACCESSMODE_12_10_BITS;
-	mode.TwoSamplingDelay = ADC_TWOSAMPLINGDELAY_12CYCLES;
+//	mode.TwoSamplingDelay = ADC_TWOSAMPLINGDELAY_12CYCLES;
 	if (HAL_ADCEx_MultiModeConfigChannel(&AdcHandle_master, &mode) != HAL_OK) {
 		/* Channel Configuration Error */
 		Error_Handler();
 	}
 }
 
-/**
- * @brief  Conversion complete callback in non blocking mode
- * @param  AdcHandle : AdcHandle handle
- * @note   This example shows a simple way to report end of conversion, and
- *         you can add your own implementation.
- * @retval None
- */
-void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc) {
-	/* Get the converted value of regular channel */
+void writeAsciiData(int start, int end){
 	uint32_t masterConvertedValue = 0;
 	uint32_t slaveConvertedValue = 0;
 	uint32_t compoundConvertedValue = 0;
+	uint32_t sysTime = HAL_GetTick();
 	aADCDualConversionDone = 1;
 	adcTick += 1;
 	if (!SDWriteFinished) {
 
 		int i, j;
-		for (j = 0; j < convertedValueBufferSize; j++) {
+		for (j = start; j < end; j++) {
 			compoundConvertedValue = aADCDualConvertedValue[j];
 			masterConvertedValue += compoundConvertedValue & 0xFFFF;
 			slaveConvertedValue += compoundConvertedValue >> 16;
 		}
-		masterConvertedValue = masterConvertedValue / convertedValueBufferSize;
-		slaveConvertedValue = slaveConvertedValue / convertedValueBufferSize;
+		masterConvertedValue = 2 * masterConvertedValue / convertedValueBufferSize;
+		slaveConvertedValue = 2 * slaveConvertedValue / convertedValueBufferSize;
 		for (i = 0; i < dataBufferSize; i++) {
 			dataBuffer[i] = 32;
 		}
-		sprintf(dataBuffer, "%u, %u, %u", HAL_GetTick(), slaveConvertedValue,
+		sprintf(dataBuffer, "%u, %u, %u", sysTime, slaveConvertedValue,
 				masterConvertedValue);
 		for (i = 0; i < dataBufferSize; i++) {
 			if (dataBuffer[i] == 0) {
@@ -421,6 +416,46 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc) {
 		}
 		dataBuffer[dataBufferSize - 1] = 13;
 		res = f_write(&MyFile, dataBuffer, sizeof(dataBuffer),
+				(void *) &byteswritten);
+		if (adcTick >= 80000) {
+			SDWriteFinished = 1;
+			if (f_close(&MyFile) != FR_OK) {
+				Error_Handler();
+			} else {
+				/*##-11- Unlink the RAM disk I/O driver ####################################*/
+				FATFS_UnLinkDriver(SDPath);
+				BSP_LED_On(LED1);
+			}
+		}
+	}
+}
+
+void writeData(int start, int end){
+	uint32_t masterConvertedValue = 0;
+//	uint32_t slaveConvertedValue = 0;
+//	uint32_t compoundConvertedValue = 0;
+//	uint32_t sysTime = HAL_GetTick();
+//	uint16_t averageValue = 0;
+	aADCDualConversionDone = 1;
+	if (!SDWriteFinished) {
+		adcTick += 1;
+
+		int j;
+		for (j = start; j < end; j++) {
+//			parsedDataHalfBuffer[j - start] = aADCDualConvertedValue[j] & 0xFFFF;
+//			compoundConvertedValue = aADCDualConvertedValue[j];
+			masterConvertedValue += aADCDualConvertedValue[j] & 0xFFFF;
+//			slaveConvertedValue += compoundConvertedValue >> 16;
+		}
+//		masterConvertedValue = 2 * masterConvertedValue / convertedValueBufferSize;
+//		slaveConvertedValue = 2 * slaveConvertedValue / convertedValueBufferSize;
+
+//		compoundConvertedValue = 0;
+//		compoundConvertedValue += masterConvertedValue & 0xFFFF;
+//		compoundConvertedValue += slaveConvertedValue >> 16;
+//		averageValue = masterConvertedValue;
+
+		res = f_write(&MyFile, (uint32_t*)&masterConvertedValue, sizeof(masterConvertedValue),
 				(void *) &byteswritten);
 		if (adcTick >= 5000) {
 			SDWriteFinished = 1;
@@ -433,6 +468,29 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc) {
 			}
 		}
 	}
+}
+
+/**
+ * @brief  Conversion complete callback in non blocking mode
+ * @param  AdcHandle : AdcHandle handle
+ * @note   This example shows a simple way to report end of conversion, and
+ *         you can add your own implementation.
+ * @retval None
+ */
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc) {
+	/* Get the converted value of regular channel */
+	int start = convertedValueBufferSize / 2;
+	int end = convertedValueBufferSize;
+//	writeAsciiData(start, end);
+	writeData(start, end);
+}
+
+void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef *hadc) {
+	/* Get the converted value of regular channel */
+	int start = 0;
+	int end = convertedValueBufferSize / 2;
+//	writeAsciiData(start, end);
+	writeData(start, end);
 }
 
 void ConvCpltCallbackCSV(ADC_HandleTypeDef *hadc) {
@@ -552,6 +610,65 @@ static void DAC_Ch1_TriangleConfig(void) {
 	}
 }
 
+#define PERIOD 2520
+static void DAC_Ch1_SinConfig(void) {
+	float32_t phase, sin, cos;
+
+	uint16_t waveformValue;
+
+	int i;
+	for(i=0; i<sinBufferSize; i++){
+		phase = ((float32_t) i) * 2. * 3.14 / ((float32_t) sinBufferSize);
+		sin = arm_sin_f32(phase * 10.0);
+		cos = arm_cos_f32(phase);
+
+		waveformValue = 4095. * (2. + .3 * sin + cos) / 4.;
+		sinBuffer[i] = waveformValue;
+	}
+
+	/*##-1- Initialize the DAC peripheral ######################################*/
+	if (HAL_DAC_Init(&DacHandle) != HAL_OK) {
+		/* Initialization Error */
+		Error_Handler();
+	}
+
+	/*##-1- DAC channel1 Configuration #########################################*/
+	sConfig.DAC_Trigger = DAC_TRIGGER_T6_TRGO;
+	sConfig.DAC_OutputBuffer = DAC_OUTPUTBUFFER_ENABLE;
+
+	if (HAL_DAC_ConfigChannel(&DacHandle, &sConfig, DACx_CHANNEL) != HAL_OK) {
+		/* Channel configuration Error */
+		Error_Handler();
+	}
+	/*##-2- Enable DAC selected channel and associated DMA #############################*/
+	if (HAL_DAC_Start_DMA(&DacHandle, DACx_CHANNEL, (uint32_t *)sinBuffer,
+			(size_t)sinBufferSize, DAC_ALIGN_12B_R) != HAL_OK) {
+		/* Start DMA Error */
+		Error_Handler();
+	}
+}
+
+/**
+ * @brief  Conversion complete callback in non blocking mode for Channel1
+ * @param  hdac: pointer to a DAC_HandleTypeDef structure that contains
+ *         the configuration information for the specified DAC.
+ * @retval None
+ */
+void HAL_DAC_ConvCpltCallbackCh1(DAC_HandleTypeDef* hdac) {
+//	SET_DAC();
+}
+
+void SET_DAC() {
+	float32_t phase = ((float32_t) HAL_GetTick() * (convertedValueBufferSize / 2)) * 2. * 3.14 / ((float32_t) PERIOD);
+	float32_t sin = arm_sin_f32(phase * 10.0);
+	float32_t cos = arm_cos_f32(phase);
+
+	uint16_t waveformValue = 4095. * (2. + .3 * sin + cos) / 4.;
+
+	HAL_DAC_SetValue(&DacHandle, DACx_CHANNEL, DAC_ALIGN_12B_R, waveformValue);
+	HAL_DAC_Start(&DacHandle, DACx_CHANNEL);
+}
+
 /**
  * @brief  TIM6 Configuration
  * @note   TIM6 configuration is based on APB1 frequency
@@ -567,7 +684,7 @@ void TIM6_Config(void) {
 	/* Time base configuration */
 	htim.Instance = TIM6;
 
-	htim.Init.Period = 0x7FF;
+	htim.Init.Period = 0xFFF;
 	htim.Init.Prescaler = 0;
 	htim.Init.ClockDivision = 0;
 	htim.Init.CounterMode = TIM_COUNTERMODE_UP;

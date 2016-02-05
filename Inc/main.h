@@ -43,6 +43,7 @@
 /* Exported constants --------------------------------------------------------*/
 /* User can use this section to tailor ADCx instance used and associated
  resources */
+void SET_DAC();
 
 /* User can use this section to tailor DACx instance used and associated
  resources */
