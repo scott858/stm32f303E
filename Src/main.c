@@ -54,13 +54,14 @@ ADC_HandleTypeDef AdcHandle_master;
 ADC_HandleTypeDef AdcHandle_slave;
 
 /* Variable containing ADC conversions results */
-#define convertedValueBufferSize 1024
+#define convertedValueBufferSize 4096
 #define sinBufferSize 1024
 __IO uint16_t uhDACxConvertedValue = 0;
 __IO uint16_t sinBuffer[sinBufferSize] = {0};
 __IO uint32_t aADCDualConvertedValue[convertedValueBufferSize];
 __IO uint16_t parsedDataBuffer[convertedValueBufferSize];
-__IO uint16_t parsedDataHalfBuffer[convertedValueBufferSize / 2];
+__IO uint16_t parsedDataUpperHalfBuffer[convertedValueBufferSize / 2];
+__IO uint16_t parsedDataLowerHalfBuffer[convertedValueBufferSize / 2];
 __IO uint8_t aADCDualConversionDone = 0;
 __IO uint8_t aADCDualConversionValue = 0;
 
@@ -357,7 +358,7 @@ static void ADC_Config(void) {
 	/*##-3- Configuration of channel on ADCx regular group on rank 1 ###########*/
 	sConfig.Channel = ADCx_CHANNELa;
 	sConfig.Rank = ADC_REGULAR_RANK_1;
-	sConfig.SamplingTime = ADC_SAMPLETIME_4CYCLES_5;
+	sConfig.SamplingTime = ADC_SAMPLETIME_19CYCLES_5;
 	sConfig.Offset = 0;
 
 	if (HAL_ADC_ConfigChannel(&AdcHandle_master, &sConfig) != HAL_OK) {
@@ -442,7 +443,6 @@ void writeData(int start, int end){
 
 		int j;
 		for (j = start; j < end; j++) {
-//			parsedDataHalfBuffer[j - start] = aADCDualConvertedValue[j] & 0xFFFF;
 //			compoundConvertedValue = aADCDualConvertedValue[j];
 			masterConvertedValue += aADCDualConvertedValue[j] & 0xFFFF;
 //			slaveConvertedValue += compoundConvertedValue >> 16;
@@ -456,6 +456,54 @@ void writeData(int start, int end){
 //		averageValue = masterConvertedValue;
 
 		res = f_write(&MyFile, (uint32_t*)&masterConvertedValue, sizeof(masterConvertedValue),
+				(void *) &byteswritten);
+		if (adcTick >= 10000) {
+			SDWriteFinished = 1;
+			if (f_close(&MyFile) != FR_OK) {
+				Error_Handler();
+			} else {
+				/*##-11- Unlink the RAM disk I/O driver ####################################*/
+				FATFS_UnLinkDriver(SDPath);
+				BSP_LED_On(LED1);
+			}
+		}
+	}
+}
+
+void writeDataUpperHalf(int start, int end){
+	aADCDualConversionDone = 1;
+	if (!SDWriteFinished) {
+		adcTick += 1;
+
+		int j;
+		for (j = start; j < end; j++) {
+			parsedDataUpperHalfBuffer[j - start] = aADCDualConvertedValue[j] & 0xFFFF;
+		}
+		res = f_write(&MyFile, (uint16_t*)parsedDataUpperHalfBuffer, sizeof(parsedDataUpperHalfBuffer),
+				(void *) &byteswritten);
+		if (adcTick >= 5000) {
+			SDWriteFinished = 1;
+			if (f_close(&MyFile) != FR_OK) {
+				Error_Handler();
+			} else {
+				/*##-11- Unlink the RAM disk I/O driver ####################################*/
+				FATFS_UnLinkDriver(SDPath);
+				BSP_LED_On(LED1);
+			}
+		}
+	}
+}
+
+void writeDataLowerHalf(int start, int end){
+	aADCDualConversionDone = 1;
+	if (!SDWriteFinished) {
+		adcTick += 1;
+
+		int j;
+		for (j = start; j < end; j++) {
+			parsedDataLowerHalfBuffer[j - start] = aADCDualConvertedValue[j] & 0xFFFF;
+		}
+		res = f_write(&MyFile, (uint16_t*)parsedDataLowerHalfBuffer, sizeof(parsedDataLowerHalfBuffer),
 				(void *) &byteswritten);
 		if (adcTick >= 5000) {
 			SDWriteFinished = 1;
@@ -482,6 +530,7 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc) {
 	int start = convertedValueBufferSize / 2;
 	int end = convertedValueBufferSize;
 //	writeAsciiData(start, end);
+//	writeDataUpperHalf(start, end);
 	writeData(start, end);
 }
 
@@ -490,6 +539,7 @@ void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef *hadc) {
 	int start = 0;
 	int end = convertedValueBufferSize / 2;
 //	writeAsciiData(start, end);
+//	writeDataLowerHalf(start, end);
 	writeData(start, end);
 }
 
@@ -684,7 +734,7 @@ void TIM6_Config(void) {
 	/* Time base configuration */
 	htim.Instance = TIM6;
 
-	htim.Init.Period = 0xFFF;
+	htim.Init.Period = 0xFFFF;
 	htim.Init.Prescaler = 0;
 	htim.Init.ClockDivision = 0;
 	htim.Init.CounterMode = TIM_COUNTERMODE_UP;
